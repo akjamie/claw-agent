@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claw-agent"
+version = "0.13.0"
+description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Jamie Zhang" }]
+license = { text = "MIT" }
+dependencies = [
+    "python-dotenv == 1.2.1",
+    "pyyaml==6.0.3",
+    "requests==2.33.0",
+    "pydantic==2.12.5",
+    # Interactive CLI (prompt_toolkit is used directly by cli.py)
+    "prompt_toolkit==3.0.52",
+    # Cron scheduler (built-in feature — scheduled cron/interval jobs use croniter).
+    "croniter==6.0.0",
+    # Skills Hub (GitHub App JWT auth — optional, only needed for bot identity)
+    "PyJWT[crypto]==2.12.1", # CVE-2026-32597
+    # HTTP client for iLink WeChat bot API (long-poll + send)
+    "aiohttp==3.13.3",
+    # QR code rendering in terminal for WeChat login
+    "qrcode==7.4.2",
+]
+
+[project.optional-dependencies]
+dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-xdist==3.8.0", "pytest-split==0.11.0", "mcp==1.26.0", "ty==0.0.21", "ruff==0.15.10", "hypothesis>=6.128.0"]
+messaging = ["python-telegram-bot[webhooks]==22.6", "discord.py[voice]==2.7.1", "aiohttp==3.13.3", "brotlicffi==1.2.0.1", "qrcode==7.4.2"]
+matrix = ["mautrix[encryption]==0.21.0", "Markdown==3.10.2", "aiosqlite==0.22.1", "asyncpg==0.31.0", "aiohttp-socks==0.11.0"]
+cli = ["simple-term-menu==1.6.6"]
+tts-premium = ["elevenlabs==1.59.0"]
+voice = [
+  # Local STT pulls in wheel-only transitive deps (ctranslate2, onnxruntime),
+  # so keep it out of the base install for source-build packagers like Homebrew.
+  "faster-whisper==1.2.1",
+  "sounddevice==0.5.5",
+  "numpy==2.4.3",
+]
+mcp = ["mcp==1.26.0"]
+homeassistant = ["aiohttp==3.13.3"]
+sms = ["aiohttp==3.13.3"]
+acp = ["agent-client-protocol==0.9.0"]
+# `claw dashboard` (localhost SPA + API).  Not in core to keep the default install lean.
+web = ["fastapi==0.133.1", "uvicorn[standard]==0.41.0"]
+
+[project.scripts]
+claw = "cli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["cli*", "gateway*", "agent*"]
