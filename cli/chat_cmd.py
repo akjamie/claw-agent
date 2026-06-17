@@ -175,6 +175,10 @@ def run_chat_command(args: argparse.Namespace) -> bool:
     )
     loop._provider = provider  # for TUI display
 
+    # Register the claw_subagent native tool so the LLM can delegate
+    # sub-tasks to a nested agent loop (no-op when subagent_enabled=false).
+    loop.register_subagent_tool()
+
     # Load history when resuming an existing session
     if session_id_arg and not new_flag:
         loop.load_session(session.id)

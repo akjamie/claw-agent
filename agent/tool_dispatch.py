@@ -327,9 +327,28 @@ class ToolDispatcher:
         if interrupt.is_set():
             return None
 
-        # 2. Call MCP. The manager already returns an
-        #    :class:`McpToolResult` for every error path; we only catch
-        #    unexpected exceptions defensively (e.g., a transport bug).
+        # 2a. Native (non-MCP) tool — invoke the registered callable directly.
+        native_handler = self._registry.get_native_handler(call.name)
+        if native_handler is not None:
+            try:
+                result_text = native_handler(args)
+            except Exception as exc:  # noqa: BLE001 — defensive boundary
+                logger.exception(
+                    "Native tool handler for %r raised", call.name
+                )
+                return self._mcp_error_message(
+                    call, f"{type(exc).__name__}: {exc}"
+                )
+            return Message(
+                role="tool",
+                tool_call_id=call.id,
+                tool_name=call.name,
+                content=result_text,
+            )
+
+        # 2b. MCP tool — call the gateway manager.
+        # The manager returns an McpToolResult for every error path; we only
+        # catch unexpected exceptions defensively (e.g., a transport bug).
         try:
             result = self._mcp.call_tool_by_name(call.name, args)
         except Exception as exc:  # noqa: BLE001 — defensive boundary

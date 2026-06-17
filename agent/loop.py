@@ -128,6 +128,51 @@ class AgentLoop:
         """
         self._interrupt_event.set()
 
+    # ── Sub-agent registration ────────────────────────────────────────
+
+    def register_subagent_tool(self) -> None:
+        """Register the ``claw_subagent`` generic tool and every enabled
+        :class:`agent.config.SubAgentDef` from ``AgentConfig.subagents``.
+
+        Called once after the loop is fully constructed.  No-op when
+        ``AgentConfig.subagent_enabled`` is ``False``.  Safe to call
+        multiple times — ``register_native`` replaces in-place.
+        """
+        if not self._cfg.subagent_enabled:
+            return
+
+        from agent.subagent import (
+            SUBAGENT_TOOL_DESCRIPTION,
+            SUBAGENT_TOOL_NAME,
+            SUBAGENT_TOOL_SCHEMA,
+            SpecializedSubAgent,
+            SubAgentRunner,
+        )
+
+        # Generic claw_subagent — lets the LLM spawn ad-hoc sub-tasks.
+        runner = SubAgentRunner(self)
+        self._registry.register_native(
+            SUBAGENT_TOOL_NAME,
+            SUBAGENT_TOOL_DESCRIPTION,
+            SUBAGENT_TOOL_SCHEMA,
+            runner,
+        )
+        logger.debug("claw_subagent native tool registered (depth=0)")
+
+        # Config-driven named sub-agents — one tool per enabled SubAgentDef.
+        for defn in self._cfg.subagents:
+            if not defn.enabled:
+                logger.debug("skipping disabled sub-agent '%s'", defn.name)
+                continue
+            agent = SpecializedSubAgent(self, defn)
+            self._registry.register_native(
+                defn.name,
+                defn.description,
+                SpecializedSubAgent.build_schema(defn),
+                agent,
+            )
+            logger.debug("sub-agent '%s' registered as native tool", defn.name)
+
     # ── Session loading ───────────────────────────────────────────────
 
     def load_session(self, session_id: str) -> None:

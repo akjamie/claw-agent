@@ -33,7 +33,7 @@ MCP subprocess interaction.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from gateway.mcp_client import McpManager, McpTool
 
@@ -101,6 +101,73 @@ class ToolRegistry:
         # `reload_from_mcp` so that a tool that briefly disappears (e.g.,
         # an MCP server crash + restart) reattaches to its override.
         self._safety_overrides: Dict[str, str] = {}
+        # Native (non-MCP) tools backed by a Python callable.
+        # Keyed by tool name; values are the handler callables.
+        self._native_handlers: Dict[str, Callable[[dict], str]] = {}
+
+    # ── Native tools ──────────────────────────────────────────────────────────
+
+    def register_native(
+        self,
+        name: str,
+        description: str,
+        input_schema: dict,
+        handler: Callable[[dict], str],
+        *,
+        safety_class: str = _NEVER_PARALLEL,
+    ) -> None:
+        """Register a Python-callable tool that bypasses MCP.
+
+        Native tools appear in :meth:`openai_tools` alongside MCP tools so
+        the LLM can call them. When the dispatcher resolves a tool call it
+        checks :meth:`get_native_handler` first; a non-``None`` result means
+        the callable is invoked directly instead of routing through
+        ``McpManager.call_tool_by_name``.
+
+        Re-registering an existing native tool replaces it in-place. This
+        is intentional — ``register_subagent_tool`` can be called multiple
+        times without leaking stale handlers.
+
+        Args:
+            name: Tool name as it will appear in the OpenAI ``tools`` array.
+            description: Human-readable description sent to the LLM.
+            input_schema: JSON-Schema fragment describing the parameters.
+            handler: Callable that receives the parsed argument ``dict`` and
+                returns a plain-text result string. Must not raise; callers
+                should wrap it in try/except.
+            safety_class: One of the module-level safety constants. Defaults
+                to ``_NEVER_PARALLEL`` — sub-agents spawn threads internally
+                so running two concurrently at the dispatcher level is
+                conservative but safe.
+        """
+        if safety_class not in _VALID_SAFETY_CLASSES:
+            raise ValueError(
+                f"unknown safety class '{safety_class}'; expected one of "
+                f"{sorted(_VALID_SAFETY_CLASSES)!r}"
+            )
+        self._tools[name] = ToolDef(
+            name=name,
+            description=description,
+            input_schema=dict(input_schema),
+            server_name="__native__",
+            safety_class=safety_class,
+        )
+        self._native_handlers[name] = handler
+
+    def get_native_handler(
+        self, tool_name: str
+    ) -> Optional[Callable[[dict], str]]:
+        """Return the native handler for ``tool_name``, or ``None``."""
+        return self._native_handlers.get(tool_name)
+
+    def list_native_names(self) -> List[str]:
+        """Return the names of all registered native tools (sorted)."""
+        return sorted(self._native_handlers.keys())
+
+    def unregister_native(self, name: str) -> None:
+        """Remove a native tool registration (no-op if not registered)."""
+        self._tools.pop(name, None)
+        self._native_handlers.pop(name, None)
 
     # ── Loading ───────────────────────────────────────────────────────────────
 
@@ -121,6 +188,11 @@ class ToolRegistry:
         for mcp_tool in self._mcp.get_all_tools():
             tool_def = self._build_tool_def(mcp_tool)
             new_tools[tool_def.name] = tool_def
+        # Preserve native tools — they are not sourced from MCP and must
+        # survive a reload (e.g. when an MCP server crashes and restarts).
+        for name, tool_def in self._tools.items():
+            if tool_def.server_name == "__native__":
+                new_tools[name] = tool_def
         self._tools = new_tools
 
     def _build_tool_def(self, mcp_tool: McpTool) -> ToolDef:
