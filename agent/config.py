@@ -158,6 +158,16 @@ class SubAgentDef:
                 file=sys.stderr,
             )
             return None
+        # Validate name is a legal Python/tool identifier: letters, digits,
+        # underscores only; must not start with a digit.
+        import re as _re
+        if not _re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+            print(
+                f"warning: agent config subagents[{index}] name '{name}' is not a "
+                f"valid identifier (use letters, digits, underscores only); skipping",
+                file=sys.stderr,
+            )
+            return None
         description = raw.get("description", "").strip()
         if not description:
             print(

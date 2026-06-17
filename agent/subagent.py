@@ -41,10 +41,14 @@ Design notes
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING, Callable, List, Optional
 
+from agent.llm_client import ProviderHTTPError
 from agent.messages import Message
+from agent.persistence import PersistenceFailure
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from agent.config import AgentConfig, SubAgentDef
@@ -292,8 +296,8 @@ class SubAgentRunner:
 
         try:
             child_loop.run_turn(task)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Sub-agent run_turn raised an exception")
+        except (ProviderHTTPError, PersistenceFailure) as exc:
+            logger.error("Sub-agent run_turn failed: %s: %s", type(exc).__name__, exc)
             return f"[subagent_error] {type(exc).__name__}: {exc}"
         finally:
             # Restore the generic runner on the parent registry so the
@@ -415,11 +419,15 @@ def _extract_final_response(history: List[Message]) -> Optional[str]:
 
 
 class _NoopPersistence:
-    """Minimal stub so child AgentLoops don't write to the user's SQLite DB."""
+    """Minimal stub so child AgentLoops don't write to the user's SQLite DB.
+
+    Implements every method that :class:`agent.loop.AgentLoop` and
+    :class:`agent.compressor.ContextCompressor` call on the persistence
+    object, including ``persist_summary`` — omitting it would cause an
+    ``AttributeError`` when context compression fires in a child loop.
+    """
 
     def __init__(self, model: str) -> None:
-        import time
-        import uuid
         from agent.persistence import Session
 
         sid = str(uuid.uuid4())
@@ -461,6 +469,14 @@ class _NoopPersistence:
         session_id: str,  # noqa: ARG002
         title: str,  # noqa: ARG002
     ) -> None:
+        pass
+
+    def persist_summary(
+        self,
+        session_id: str,  # noqa: ARG002
+        message: object,  # noqa: ARG002
+    ) -> None:
+        """No-op: compression summaries are not persisted for sub-agent sessions."""
         pass
 
     def initialize(self) -> None:

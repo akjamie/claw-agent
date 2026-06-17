@@ -427,7 +427,7 @@ def _cmd_run(args: argparse.Namespace) -> bool:
     )
     parent_loop._provider = provider  # noqa: SLF001
 
-    sys_prompt_override: str | None = getattr(args, "system_prompt", None) or None
+    sys_prompt_override: str | None = getattr(args, "system_prompt", None)
     max_iter_override: int | None = getattr(args, "max_iterations", None)
 
     try:
@@ -449,7 +449,9 @@ def _cmd_run(args: argparse.Namespace) -> bool:
 
     if not result.endswith("\n"):
         print()
-    if result.startswith("[subagent_error]") or result.endswith("_error]"):
+    if result.startswith("[subagent_error]") or (
+        result.startswith("[") and "_error]" in result.split("]", 1)[0]
+    ):
         print_error(result)
         return False
     return True
