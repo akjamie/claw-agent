@@ -333,7 +333,6 @@ def _print_names(cfg) -> None:
 
 def _cmd_run(args: argparse.Namespace) -> bool:
     """Run a named sub-agent one-shot and stream output to stdout."""
-    import os
     from agent.config import load_agent_config
     from agent.compressor import ContextCompressor
     from agent.guardrails import GuardrailsController
@@ -386,7 +385,7 @@ def _cmd_run(args: argparse.Namespace) -> bool:
         return False
     base_url = provider_info["base_url"]
     api_key_env = provider_info["api_key_env"]
-    api_key = os.environ.get(api_key_env) or get_env_value(api_key_env) or ""
+    api_key = get_env_value(api_key_env) or ""
     if not api_key:
         print_error(f"API key not found. Set the {api_key_env} environment variable.")
         return False
@@ -426,6 +425,10 @@ def _cmd_run(args: argparse.Namespace) -> bool:
         title_generator=title_gen, on_text_delta=_stdout_writer,
     )
     parent_loop._provider = provider  # noqa: SLF001
+
+    # Register all enabled named sub-agents on the parent loop's registry
+    # so they are available if a sub-agent invokes another sub-agent.
+    parent_loop.register_subagent_tool()
 
     sys_prompt_override: str | None = getattr(args, "system_prompt", None)
     max_iter_override: int | None = getattr(args, "max_iterations", None)

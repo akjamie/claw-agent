@@ -126,6 +126,15 @@ class SubAgentDef:
             except OSError:
                 pass
 
+        # Neither path resolved — warn so the user knows the sub-agent is
+        # running without its configured persona.
+        import sys as _sys
+        print(
+            f"warning: sub-agent '{self.name}' system_prompt file not found: "
+            f"'{sp}' (checked ~/.claw/{sp} and path as given); "
+            "running without system prompt.",
+            file=_sys.stderr,
+        )
         return ""  # file not found — sub-agent runs without a system prompt
 
     def to_dict(self) -> Dict[str, Any]:
