@@ -46,7 +46,7 @@ import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING, Callable, List, Optional
 
-from agent.llm_client import ProviderHTTPError
+from agent.llm_client import LLMClient, ProviderHTTPError
 from agent.messages import Message
 from agent.persistence import PersistenceFailure
 
@@ -213,7 +213,6 @@ class SubAgentRunner:
         # LLM — reuse parent's or build a new one for the model override.
         child_llm = parent._llm  # noqa: SLF001
         if model is not None:
-            from agent.llm_client import LLMClient
             child_llm = LLMClient(
                 base_url=parent._llm.base_url,  # noqa: SLF001
                 api_key=parent._llm._api_key,   # noqa: SLF001
@@ -248,6 +247,10 @@ class SubAgentRunner:
         )
         child_on_delta: Optional[Callable[[str], None]] = None
         if stream and parent_on_delta is not None:
+            # Default-arg capture hack: Python closures bind free variables
+            # by reference, so parent_on_delta / stream_prefix would reflect
+            # rebinding on re-entry.  Binding them as default args captures
+            # the current values at definition time.
             def child_on_delta(  # noqa: E306
                 text: str,
                 _cb: Callable[[str], None] = parent_on_delta,
