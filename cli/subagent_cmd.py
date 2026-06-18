@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 
 from cli.interactive_ui import (
     print_error,
@@ -118,7 +119,6 @@ def _cmd_disable(_args: argparse.Namespace) -> bool:
 
 
 def _set_global_enabled(value: bool) -> bool:
-    from dataclasses import replace
     from agent.config import load_agent_config, save_agent_config
 
     cfg = load_agent_config()
@@ -137,7 +137,6 @@ def _set_global_enabled(value: bool) -> bool:
 
 def _cmd_config(_args: argparse.Namespace) -> bool:
     """Interactively update global sub-agent knobs."""
-    from dataclasses import replace
     from agent.config import load_agent_config, save_agent_config
 
     cfg = load_agent_config()
@@ -256,8 +255,7 @@ def _cmd_add(_args: argparse.Namespace) -> bool:
         enabled=True,
     )
 
-    from dataclasses import replace as dc_replace
-    cfg = dc_replace(cfg, subagents=list(cfg.subagents) + [defn])
+    cfg = replace(cfg, subagents=list(cfg.subagents) + [defn])
     if save_agent_config(cfg):
         print_success(f"Sub-agent '{name}' added.")
         print_info("It will be registered as a native tool on the next 'claw chat' session.")
@@ -270,7 +268,6 @@ def _cmd_add(_args: argparse.Namespace) -> bool:
 
 def _cmd_remove(args: argparse.Namespace) -> bool:
     """Remove a named sub-agent from config."""
-    from dataclasses import replace as dc_replace
     from agent.config import load_agent_config, save_agent_config
 
     name = args.name.strip()
@@ -286,7 +283,7 @@ def _cmd_remove(args: argparse.Namespace) -> bool:
         return False
 
     updated = [d for d in cfg.subagents if d.name != name]
-    cfg = dc_replace(cfg, subagents=updated)
+    cfg = replace(cfg, subagents=updated)
     if save_agent_config(cfg):
         print_success(f"Sub-agent '{name}' removed.")
         return True
@@ -298,7 +295,6 @@ def _cmd_remove(args: argparse.Namespace) -> bool:
 
 def _cmd_toggle(args: argparse.Namespace) -> bool:
     """Toggle enabled/disabled for one named sub-agent."""
-    from dataclasses import replace as dc_replace
     from agent.config import load_agent_config, save_agent_config
 
     name = args.name.strip()
@@ -310,10 +306,10 @@ def _cmd_toggle(args: argparse.Namespace) -> bool:
         return False
 
     defn = cfg.subagents[idx]
-    new_defn = dc_replace(defn, enabled=not defn.enabled)
+    new_defn = replace(defn, enabled=not defn.enabled)
     updated = list(cfg.subagents)
     updated[idx] = new_defn
-    cfg = dc_replace(cfg, subagents=updated)
+    cfg = replace(cfg, subagents=updated)
     if save_agent_config(cfg):
         state = "enabled" if new_defn.enabled else "disabled"
         print_success(f"Sub-agent '{name}' {state}.")

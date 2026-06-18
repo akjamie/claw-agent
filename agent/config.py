@@ -32,6 +32,7 @@ but emit one stderr warning naming the offending key (Req 14.4).
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
@@ -90,7 +91,7 @@ class SubAgentDef:
         Resolution order:
 
         1. ``~/.claw/<value>``
-        2. Absolute / CWD-relative path as given.
+        2. The value as an absolute or CWD-relative path.
 
         Returns the raw string (inline or file contents), or an empty
         string if the file cannot be read.
@@ -104,7 +105,7 @@ class SubAgentDef:
             lsp.endswith(".md")
             or lsp.endswith(".txt")
             or "/" in sp
-            or "\\" in sp
+            or os.path.sep in sp
         )
         if not looks_like_path:
             return sp  # inline text
@@ -118,12 +119,22 @@ class SubAgentDef:
             except OSError:
                 pass
 
+        # Fall back to the path as given (absolute or CWD-relative).
+        # This handles bundled persona files shipped with the package
+        # (e.g. cli/personas/python-review.md).
+        p = Path(sp)
+        if p.is_file():
+            try:
+                return p.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
         # Neither path resolved — warn so the user knows the sub-agent is
         # running without its configured persona.
         import sys as _sys
         print(
             f"warning: sub-agent '{self.name}' system_prompt file not found: "
-            f"'{sp}' (checked ~/.claw/{sp}); "
+            f"'{sp}' (checked ~/.claw/{sp} and path as given); "
             "running without system prompt.",
             file=_sys.stderr,
         )
