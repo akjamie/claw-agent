@@ -5,7 +5,7 @@ Provides the `claw chat` command with multi-turn conversation,
 MCP tool integration, context compression, and SQLite persistence.
 """
 
-from agent.config import AgentConfig, load_agent_config, save_agent_config
+from agent.config import AgentConfig, SubAgentDef, load_agent_config, save_agent_config
 from agent.messages import Message, ToolCall, canonical_args, COMPRESSION_SUMMARY_TOOL_NAME
 from agent.llm_client import LLMClient, StreamResult, StreamStatus, ProviderHTTPError
 from agent.persistence import (
@@ -32,10 +32,16 @@ from agent.tool_dispatch import ToolDispatcher
 from agent.compressor import ContextCompressor, CompressionResult
 from agent.title_generator import TitleGenerator
 from agent.loop import AgentLoop
+from agent.subagent import (
+    SubAgentRunner,
+    SpecializedSubAgent,
+    SUBAGENT_TOOL_NAME,
+)
 
 __all__ = [
     # config
     "AgentConfig",
+    "SubAgentDef",
     "load_agent_config",
     "save_agent_config",
     # messages
@@ -73,4 +79,8 @@ __all__ = [
     "TitleGenerator",
     # loop
     "AgentLoop",
+    # subagent
+    "SubAgentRunner",
+    "SpecializedSubAgent",
+    "SUBAGENT_TOOL_NAME",
 ]

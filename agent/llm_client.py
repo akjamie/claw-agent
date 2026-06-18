@@ -198,6 +198,10 @@ class LLMClient:
     def base_url(self) -> str:
         return self._base_url
 
+    @property
+    def api_key(self) -> str:
+        return self._api_key
+
     # ----- Request assembly ---------------------------------------------
 
     def _headers(self) -> dict[str, str]:

@@ -20,6 +20,10 @@ Validation ranges per design §"agent.config" and Requirements 6.1, 7.8,
 - ``summary_floor_tokens``           — positive int (default 2_000)
 - ``summary_cap_tokens``             — positive int (default 12_000)
 - ``summary_fraction``               — float in (0.0, 1.0) (default 0.20)
+- ``subagent_enabled``               — bool (default True)
+- ``subagent_max_iterations``        — positive int (default 20)
+- ``subagent_max_depth``             — positive int (default 3)
+- ``subagents``                      — list of SubAgentDef (default: [python-review])
 
 Missing keys silently fall back to the defaults defined here (Req 14.3).
 Invalid keys (wrong type or out-of-range) also fall back to the default,
@@ -30,11 +34,200 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field, fields, replace
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 # Sentinel returned by validators when the user-supplied value is rejected.
 _INVALID = object()
+
+
+@dataclass
+class SubAgentDef:
+    """Config-driven definition of one named sub-agent tool.
+
+    Each entry in ``AgentConfig.subagents`` becomes a native tool
+    registered with the LLM.  The LLM calls it automatically when the
+    task matches the ``description``.
+
+    Fields
+    ------
+    name:
+        Tool name as the LLM sees it (e.g. ``claw_python_review``).
+        Must be a valid identifier (no spaces).
+    description:
+        One or two sentences telling the LLM *when* to call this tool
+        and what it returns.  This is the most important field for
+        auto-triggering.
+    system_prompt:
+        The system message prepended to the sub-agent's context.
+        Can be an inline string or a path to a ``.md``/``.txt`` file
+        (resolved relative to ``~/.claw/`` first, then as an absolute /
+        CWD-relative path).
+    model:
+        Optional model override for this sub-agent.  ``None`` means
+        reuse the parent's model.
+    max_iterations:
+        Optional iteration budget override.  ``None`` uses
+        ``AgentConfig.subagent_max_iterations``.
+    enabled:
+        When ``False`` the tool is not registered and is invisible to
+        the LLM.  Defaults to ``True``.
+    """
+
+    name: str
+    description: str
+    system_prompt: str = ""
+    model: Optional[str] = None
+    max_iterations: Optional[int] = None
+    enabled: bool = True
+
+    def resolve_system_prompt(self) -> str:
+        """Return the system prompt text, loading from file if needed.
+
+        If ``system_prompt`` looks like a file path (ends in ``.md`` or
+        ``.txt``, or contains a path separator) the file is read.
+        Resolution order:
+
+        1. ``~/.claw/<value>``
+        2. Absolute / CWD-relative path as given.
+
+        Returns the raw string (inline or file contents), or an empty
+        string if the file cannot be read.
+        """
+        sp = self.system_prompt.strip()
+        if not sp:
+            return ""
+
+        lsp = sp.lower()
+        looks_like_path = (
+            lsp.endswith(".md")
+            or lsp.endswith(".txt")
+            or "/" in sp
+            or "\\" in sp
+        )
+        if not looks_like_path:
+            return sp  # inline text
+
+        # Try ~/.claw/<value> first so users can drop prompts next to config.
+        from cli.config import get_claw_home
+        candidate = get_claw_home() / sp
+        if candidate.is_file():
+            try:
+                return candidate.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
+        # Neither path resolved — warn so the user knows the sub-agent is
+        # running without its configured persona.
+        import sys as _sys
+        print(
+            f"warning: sub-agent '{self.name}' system_prompt file not found: "
+            f"'{sp}' (checked ~/.claw/{sp}); "
+            "running without system prompt.",
+            file=_sys.stderr,
+        )
+        return ""  # file not found — sub-agent runs without a system prompt
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "name": self.name,
+            "description": self.description,
+            "enabled": self.enabled,
+        }
+        if self.system_prompt:
+            d["system_prompt"] = self.system_prompt
+        if self.model is not None:
+            d["model"] = self.model
+        if self.max_iterations is not None:
+            d["max_iterations"] = self.max_iterations
+        return d
+
+    @classmethod
+    def from_dict(cls, raw: Any, index: int) -> Optional["SubAgentDef"]:
+        """Parse one subagents list entry; return ``None`` on validation error."""
+        if not isinstance(raw, dict):
+            print(
+                f"warning: agent config subagents[{index}] is not a dict; skipping",
+                file=sys.stderr,
+            )
+            return None
+        name = raw.get("name", "").strip()
+        if not name:
+            print(
+                f"warning: agent config subagents[{index}] missing 'name'; skipping",
+                file=sys.stderr,
+            )
+            return None
+        # Validate name is a legal Python/tool identifier: letters, digits,
+        # underscores only; must not start with a digit.
+        import re as _re
+        if not _re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+            print(
+                f"warning: agent config subagents[{index}] name '{name}' is not a "
+                f"valid identifier (use letters, digits, underscores only); skipping",
+                file=sys.stderr,
+            )
+            return None
+        description = raw.get("description", "").strip()
+        if not description:
+            print(
+                f"warning: agent config subagents[{index}] ('{name}') missing 'description'; skipping",
+                file=sys.stderr,
+            )
+            return None
+        system_prompt = raw.get("system_prompt", "") or ""
+        model = raw.get("model") or None
+        raw_max_iter = raw.get("max_iterations")
+        max_iterations: Optional[int] = None
+        if raw_max_iter is not None:
+            if isinstance(raw_max_iter, bool) or not isinstance(raw_max_iter, int) or raw_max_iter <= 0:
+                print(
+                    f"warning: agent config subagents[{index}] ('{name}') "
+                    f"invalid max_iterations; using default",
+                    file=sys.stderr,
+                )
+            else:
+                max_iterations = raw_max_iter
+        enabled = raw.get("enabled", True)
+        if not isinstance(enabled, bool):
+            enabled = True
+        return cls(
+            name=name,
+            description=description,
+            system_prompt=str(system_prompt),
+            model=model,
+            max_iterations=max_iterations,
+            enabled=enabled,
+        )
+
+
+def _default_subagents() -> List[SubAgentDef]:
+    """Return the built-in default sub-agent list.
+
+    The python-review sub-agent references the bundled persona file via a
+    relative path so it works without any user configuration.  The path
+    stored in config is just ``personas/python-review.md``; ``resolve_system_prompt``
+    resolves it against ``~/.claw/`` first, then falls back to the installed
+    package file.
+    """
+    # Compute package-relative path so it still resolves when installed.
+    _pkg_persona = Path(__file__).parent.parent / "cli" / "personas" / "python-review.md"
+    _persona_ref = str(_pkg_persona) if _pkg_persona.is_file() else "personas/python-review.md"
+
+    return [
+        SubAgentDef(
+            name="claw_python_review",
+            description=(
+                "Delegate a Python code review to a specialist sub-agent. "
+                "Call this automatically after writing, modifying, or generating "
+                "Python code that will be executed or committed. "
+                "Returns a structured review with verdict and actionable fixes."
+            ),
+            system_prompt=_persona_ref,
+            enabled=True,
+        ),
+    ]
 
 
 @dataclass
@@ -56,6 +249,10 @@ class AgentConfig:
     summary_floor_tokens: int = 2_000
     summary_cap_tokens: int = 12_000
     summary_fraction: float = 0.20
+    subagent_enabled: bool = True
+    subagent_max_iterations: int = 20
+    subagent_max_depth: int = 3
+    subagents: List[SubAgentDef] = field(default_factory=_default_subagents)
 
 
 # ── Validators ────────────────────────────────────────────────────────────────
@@ -106,6 +303,25 @@ def _validate_model_context_windows(raw: Any) -> Any:
 
 # Map field name -> validator. Fields not listed are left at the dataclass
 # default and are not currently configurable from the JSON file.
+def _validate_bool(raw: Any) -> Any:
+    if isinstance(raw, bool):
+        return raw
+    return _INVALID
+
+
+def _validate_subagents(raw: Any) -> Any:
+    """Parse the ``subagents`` list; return validated list or ``_INVALID``."""
+    if not isinstance(raw, list):
+        return _INVALID
+    result: List[SubAgentDef] = []
+    for i, entry in enumerate(raw):
+        defn = SubAgentDef.from_dict(entry, i)
+        if defn is not None:
+            result.append(defn)
+    # An empty list is valid — the user explicitly wants no sub-agents.
+    return result
+
+
 _VALIDATORS = {
     "max_iterations": _validate_positive_int,
     "context_compression_threshold": _validate_open_unit_float,
@@ -118,6 +334,10 @@ _VALIDATORS = {
     "summary_floor_tokens": _validate_positive_int,
     "summary_cap_tokens": _validate_positive_int,
     "summary_fraction": _validate_open_unit_float,
+    "subagent_enabled": _validate_bool,
+    "subagent_max_iterations": _validate_positive_int,
+    "subagent_max_depth": _validate_positive_int,
+    "subagents": _validate_subagents,
 }
 
 
@@ -190,8 +410,12 @@ def save_agent_config(cfg: AgentConfig) -> bool:
         "summary_floor_tokens": cfg.summary_floor_tokens,
         "summary_cap_tokens": cfg.summary_cap_tokens,
         "summary_fraction": cfg.summary_fraction,
+        "subagent_enabled": cfg.subagent_enabled,
+        "subagent_max_iterations": cfg.subagent_max_iterations,
+        "subagent_max_depth": cfg.subagent_max_depth,
+        "subagents": [sa.to_dict() for sa in cfg.subagents],
     }
     return save_config(full_cfg)
 
 
-__all__ = ["AgentConfig", "load_agent_config", "save_agent_config"]
+__all__ = ["AgentConfig", "SubAgentDef", "load_agent_config", "save_agent_config"]

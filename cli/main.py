@@ -13,6 +13,7 @@ from cli.models_cmd import run_models_command, show_current_model
 from cli.skills_cmd import run_skills_command
 from cli.gateway_cmd import register_gateway_parser, run_gateway_command
 from cli.chat_cmd import register_chat_parser, run_chat_command
+from cli.subagent_cmd import register_subagent_parser, run_subagent_command  # noqa: E402
 
 
 def main():
@@ -42,6 +43,9 @@ def main():
     # gateway command
     register_gateway_parser(subparsers)
 
+    # subagent command
+    register_subagent_parser(subparsers)
+
     # chat command
     register_chat_parser(subparsers)
 
@@ -63,6 +67,9 @@ def main():
         sys.exit(0 if success else 1)
     elif args.command == "gateway":
         success = run_gateway_command(args)
+        sys.exit(0 if success else 1)
+    elif args.command == "subagent":
+        success = run_subagent_command(args)
         sys.exit(0 if success else 1)
     elif args.command == "chat":
         run_chat_command(args)  # exits internally with the right code

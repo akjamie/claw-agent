@@ -94,6 +94,7 @@ class AgentLoop:
         title_generator: Optional["TitleGenerator"] = None,
         on_text_delta: Optional[Callable[[str], None]] = None,
         on_status: Optional[Callable[["StreamStatus"], None]] = None,
+        subagent_depth: int = 0,
     ) -> None:
         self._cfg = cfg
         self._llm = llm
@@ -108,6 +109,7 @@ class AgentLoop:
         self._title_generator = title_generator
         self._on_text_delta = on_text_delta
         self._on_status = on_status
+        self._subagent_depth = subagent_depth
         self.history: List[Message] = []
         self._interrupt_event = threading.Event()
 
@@ -127,6 +129,51 @@ class AgentLoop:
         Tool_Calls and inside each worker.
         """
         self._interrupt_event.set()
+
+    # ── Sub-agent registration ────────────────────────────────────────
+
+    def register_subagent_tool(self) -> None:
+        """Register the ``claw_subagent`` generic tool and every enabled
+        :class:`agent.config.SubAgentDef` from ``AgentConfig.subagents``.
+
+        Called once after the loop is fully constructed.  No-op when
+        ``AgentConfig.subagent_enabled`` is ``False``.  Safe to call
+        multiple times — ``register_native`` replaces in-place.
+        """
+        if not self._cfg.subagent_enabled:
+            return
+
+        from agent.subagent import (
+            SUBAGENT_TOOL_DESCRIPTION,
+            SUBAGENT_TOOL_NAME,
+            SUBAGENT_TOOL_SCHEMA,
+            SpecializedSubAgent,
+            SubAgentRunner,
+        )
+
+        # Generic claw_subagent — lets the LLM spawn ad-hoc sub-tasks.
+        runner = SubAgentRunner(self)
+        self._registry.register_native(
+            SUBAGENT_TOOL_NAME,
+            SUBAGENT_TOOL_DESCRIPTION,
+            SUBAGENT_TOOL_SCHEMA,
+            runner,
+        )
+        logger.debug("claw_subagent native tool registered (depth=0)")
+
+        # Config-driven named sub-agents — one tool per enabled SubAgentDef.
+        for defn in self._cfg.subagents:
+            if not defn.enabled:
+                logger.debug("skipping disabled sub-agent '%s'", defn.name)
+                continue
+            agent = SpecializedSubAgent(self, defn)
+            self._registry.register_native(
+                defn.name,
+                defn.description,
+                SpecializedSubAgent.build_schema(defn),
+                agent,
+            )
+            logger.debug("sub-agent '%s' registered as native tool", defn.name)
 
     # ── Session loading ───────────────────────────────────────────────
 
