@@ -94,6 +94,7 @@ class AgentLoop:
         title_generator: Optional["TitleGenerator"] = None,
         on_text_delta: Optional[Callable[[str], None]] = None,
         on_status: Optional[Callable[["StreamStatus"], None]] = None,
+        subagent_depth: int = 0,
     ) -> None:
         self._cfg = cfg
         self._llm = llm
@@ -108,6 +109,7 @@ class AgentLoop:
         self._title_generator = title_generator
         self._on_text_delta = on_text_delta
         self._on_status = on_status
+        self._subagent_depth = subagent_depth
         self.history: List[Message] = []
         self._interrupt_event = threading.Event()
 

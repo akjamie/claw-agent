@@ -118,20 +118,12 @@ class SubAgentDef:
             except OSError:
                 pass
 
-        # Fall back to the path as given (absolute or CWD-relative).
-        p = Path(sp)
-        if p.is_file():
-            try:
-                return p.read_text(encoding="utf-8").strip()
-            except OSError:
-                pass
-
         # Neither path resolved — warn so the user knows the sub-agent is
         # running without its configured persona.
         import sys as _sys
         print(
             f"warning: sub-agent '{self.name}' system_prompt file not found: "
-            f"'{sp}' (checked ~/.claw/{sp} and path as given); "
+            f"'{sp}' (checked ~/.claw/{sp}); "
             "running without system prompt.",
             file=_sys.stderr,
         )

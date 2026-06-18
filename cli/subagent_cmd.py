@@ -337,9 +337,9 @@ def _cmd_run(args: argparse.Namespace) -> bool:
     from agent.compressor import ContextCompressor
     from agent.guardrails import GuardrailsController
     from agent.llm_client import LLMClient
+    from agent.loop import _default_token_estimator as token_estimator
     from agent.loop import AgentLoop
-    from agent.persistence import SqlitePersistence
-    from agent.subagent import SpecializedSubAgent, SubAgentRunner
+    from agent.subagent import _NoopPersistence, SpecializedSubAgent, SubAgentRunner
     from agent.title_generator import TitleGenerator
     from agent.tool_dispatch import ToolDispatcher
     from agent.tool_registry import ToolRegistry
@@ -410,12 +410,10 @@ def _cmd_run(args: argparse.Namespace) -> bool:
         registry=registry, mcp=mcp, guardrails=guardrails,
         max_workers=cfg.max_tool_workers, timeout_s=cfg.tool_call_timeout_seconds,
     )
-    token_estimator = lambda s: max(1, len(s) // 4)  # noqa: E731
     compressor = ContextCompressor(llm=llm, agent_cfg=cfg, token_estimator=token_estimator)
     title_gen = TitleGenerator(llm)
-    persistence = SqlitePersistence()
-    persistence.initialize()
-    session = persistence.create_session(model)
+    persistence = _NoopPersistence(model)
+    session = persistence.session
 
     parent_loop = AgentLoop(
         cfg=cfg, llm=llm, mcp=mcp, registry=registry,
@@ -449,6 +447,8 @@ def _cmd_run(args: argparse.Namespace) -> bool:
     except KeyboardInterrupt:
         print("\nCancelled.", file=sys.stderr)
         return False
+    finally:
+        mcp.stop_all()
 
     if not result.endswith("\n"):
         print()

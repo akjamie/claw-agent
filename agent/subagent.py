@@ -137,7 +137,7 @@ class SubAgentRunner:
 
     def __init__(self, parent: "AgentLoop") -> None:
         self._parent = parent
-        self._depth: int = getattr(parent, "_subagent_depth", 0)
+        self._depth: int = parent._subagent_depth  # noqa: SLF001
 
     # ── Native-tool callable ──────────────────────────────────────────
 
@@ -215,7 +215,7 @@ class SubAgentRunner:
         if model is not None:
             child_llm = LLMClient(
                 base_url=parent._llm.base_url,  # noqa: SLF001
-                api_key=parent._llm._api_key,   # noqa: SLF001
+                api_key=parent._llm.api_key,
                 model=model,
             )
 
@@ -245,6 +245,7 @@ class SubAgentRunner:
         parent_on_delta: Optional[Callable[[str], None]] = (
             parent._on_text_delta  # noqa: SLF001
         )
+        accumulated: List[str] = []
         child_on_delta: Optional[Callable[[str], None]] = None
         if stream and parent_on_delta is not None:
             # Default-arg capture hack: Python closures bind free variables
@@ -257,6 +258,9 @@ class SubAgentRunner:
                 _pfx: str = stream_prefix,
             ) -> None:
                 _cb(f"{_pfx}{text}")
+        elif not stream:
+            def child_on_delta(text: str) -> None:
+                accumulated.append(text)
 
         from agent.loop import AgentLoop
         child_loop = AgentLoop(
@@ -273,8 +277,8 @@ class SubAgentRunner:
             title_generator=None,
             on_text_delta=child_on_delta,
             on_status=None,
+            subagent_depth=self._depth + 1,
         )
-        child_loop._subagent_depth = self._depth + 1  # noqa: SLF001
 
         # Re-register the generic claw_subagent on the child so it can
         # recurse (depth guard will fire at max_depth).
@@ -290,12 +294,6 @@ class SubAgentRunner:
             child_loop.history.append(
                 Message(role="system", content=system_prompt)
             )
-
-        accumulated: List[str] = []
-        if not stream:
-            def _collect(text: str) -> None:
-                accumulated.append(text)
-            child_loop._on_text_delta = _collect  # noqa: SLF001
 
         try:
             child_loop.run_turn(task)
