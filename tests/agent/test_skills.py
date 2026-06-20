@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -129,5 +130,79 @@ def test_read_skill_no_frontmatter():
             )
             body = read_skill("plain")
             assert body == "# Plain Skill\n\nJust content.\n"
+        finally:
+            sk._SKILLS_DIR = original
+
+
+def test_read_skill_io_error_returns_none():
+    """read_skill returns None when read_text raises OSError."""
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_dir = Path(tmp)
+        import agent.skills as sk
+
+        original = sk._SKILLS_DIR
+        sk._SKILLS_DIR = skills_dir
+        try:
+            (skills_dir / "locked").mkdir()
+            (skills_dir / "locked" / "SKILL.md").write_text(
+                "---\nname: locked\n---\n\nContent\n", encoding="utf-8",
+            )
+            with patch.object(Path, "read_text", side_effect=OSError("read error")):
+                assert read_skill("locked") is None
+        finally:
+            sk._SKILLS_DIR = original
+
+
+def test_list_skills_io_error_skips_unreadable():
+    """list_skills skips a skill whose SKILL.md cannot be read."""
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_dir = Path(tmp)
+        import agent.skills as sk
+
+        original = sk._SKILLS_DIR
+        sk._SKILLS_DIR = skills_dir
+        try:
+            (skills_dir / "good").mkdir()
+            (skills_dir / "good" / "SKILL.md").write_text(
+                "---\nname: good\ndescription: Fine\n---\n\nContent\n",
+                encoding="utf-8",
+            )
+            (skills_dir / "bad").mkdir()
+            (skills_dir / "bad" / "SKILL.md").write_text(
+                "---\nname: bad\n---\n\nNope\n", encoding="utf-8",
+            )
+            # Patch only the bad skill's read_text — use side_effect per call
+            # by patching Path.read_text globally and checking the path
+            original_read_text = Path.read_text
+            def mock_read_text(self, *a, **kw):
+                if "bad" in str(self):
+                    raise OSError("read error")
+                return original_read_text(self, *a, **kw)
+            with patch.object(Path, "read_text", mock_read_text):
+                result = list_skills()
+                assert len(result) == 1
+                assert result[0]["name"] == "good"
+        finally:
+            sk._SKILLS_DIR = original
+
+
+def test_list_skills_malformed_frontmatter():
+    """list_skills handles malformed YAML frontmatter gracefully."""
+    with tempfile.TemporaryDirectory() as tmp:
+        skills_dir = Path(tmp)
+        import agent.skills as sk
+
+        original = sk._SKILLS_DIR
+        sk._SKILLS_DIR = skills_dir
+        try:
+            (skills_dir / "borked").mkdir()
+            (skills_dir / "borked" / "SKILL.md").write_text(
+                "---\nname: borked\ninvalid: [unclosed\n---\n\nContent\n",
+                encoding="utf-8",
+            )
+            # Should still be listed (no crash) with name from dir name
+            result = list_skills()
+            assert len(result) >= 1
+            assert result[0]["name"] == "borked"
         finally:
             sk._SKILLS_DIR = original

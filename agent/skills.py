@@ -168,7 +168,11 @@ def list_skills() -> List[Dict[str, Any]]:
         skill_file = entry / "SKILL.md"
         if not skill_file.is_file():
             continue
-        content = skill_file.read_text(encoding="utf-8")
+        try:
+            content = skill_file.read_text(encoding="utf-8")
+        except OSError:
+            logger.warning("Skipping unreadable skill file: %s", skill_file)
+            continue
         fm = _parse_frontmatter(content)
         result.append({
             "name": fm.get("name", entry.name),
