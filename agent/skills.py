@@ -187,9 +187,19 @@ def read_skill(name: str) -> Optional[str]:
 
     The returned body has the YAML frontmatter stripped.  If the skill file
     contains no frontmatter, the full content is returned as-is.
+
+    Path traversal is prevented by resolving the requested path and
+    verifying it stays within the skills directory.
     """
     skills_dir = _resolve_skills_dir()
-    skill_path = skills_dir / name / "SKILL.md"
+    # Prevent path traversal: resolve the requested path and confirm it
+    # lives inside the skills directory (MEDIUM security concern).
+    try:
+        requested = (skills_dir / name).resolve()
+        requested.relative_to(skills_dir.resolve())
+    except (ValueError, OSError):
+        return None
+    skill_path = requested / "SKILL.md"
     if not skill_path.is_file():
         return None
     try:
@@ -213,8 +223,7 @@ class ListSkillsHandler:
         result = handler({"some": "args"})
     """
 
-    @staticmethod
-    def __call__(args: dict) -> str:  # noqa: ARG004
+    def __call__(self, args: dict) -> str:  # noqa: ARG004
         skills = list_skills()
         if not skills:
             return "No skills found."
@@ -240,8 +249,7 @@ class ReadSkillHandler:
         result = handler({"name": "my-skill"})
     """
 
-    @staticmethod
-    def __call__(args: dict) -> str:
+    def __call__(self, args: dict) -> str:
         name = args.get("name", "").strip()
         if not name:
             return "[skill_error] 'name' argument is required."

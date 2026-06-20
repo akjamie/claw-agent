@@ -171,11 +171,12 @@ def test_list_skills_io_error_skips_unreadable():
             (skills_dir / "bad" / "SKILL.md").write_text(
                 "---\nname: bad\n---\n\nNope\n", encoding="utf-8",
             )
-            # Patch only the bad skill's read_text — use side_effect per call
-            # by patching Path.read_text globally and checking the path
+            # Patch only the bad skill's read_text — match by parent dir name
+            # so a path containing "bad" elsewhere (e.g. a temp dir) doesn't
+            # produce false positives.
             original_read_text = Path.read_text
             def mock_read_text(self, *a, **kw):
-                if "bad" in str(self):
+                if self.parent.name == "bad" and self.name == "SKILL.md":
                     raise OSError("read error")
                 return original_read_text(self, *a, **kw)
             with patch.object(Path, "read_text", mock_read_text):
