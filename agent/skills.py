@@ -40,6 +40,7 @@ __all__ = [
     "read_skill",
     "SKILL_LIST_TOOL_NAME",
     "SKILL_LIST_TOOL_DESCRIPTION",
+    "SKILL_LIST_TOOL_SCHEMA",
     "SKILL_READ_TOOL_NAME",
     "SKILL_READ_TOOL_DESCRIPTION",
     "SKILL_READ_TOOL_SCHEMA",
@@ -81,6 +82,11 @@ SKILL_LIST_TOOL_DESCRIPTION = (
     "platforms.  Use this to discover which skills are installed on the "
     "current system."
 )
+
+SKILL_LIST_TOOL_SCHEMA: dict = {
+    "type": "object",
+    "properties": {},
+}
 
 SKILL_READ_TOOL_NAME = "claw_read_skill"
 
@@ -182,7 +188,10 @@ def read_skill(name: str) -> Optional[str]:
     skill_path = skills_dir / name / "SKILL.md"
     if not skill_path.is_file():
         return None
-    content = skill_path.read_text(encoding="utf-8")
+    try:
+        content = skill_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
     m = _FRONTMATTER_RE.match(content)
     if m:
         return m.group(2)
