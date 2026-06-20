@@ -179,6 +179,10 @@ def run_chat_command(args: argparse.Namespace) -> bool:
     # sub-tasks to a nested agent loop (no-op when subagent_enabled=false).
     loop.register_subagent_tool()
 
+    # Register skill tools so the LLM can discover and read bundled
+    # skills during the session.
+    loop.register_skill_tools()
+
     # Load history when resuming an existing session
     if session_id_arg and not new_flag:
         loop.load_session(session.id)
