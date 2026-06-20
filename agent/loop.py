@@ -175,6 +175,42 @@ class AgentLoop:
             )
             logger.debug("sub-agent '%s' registered as native tool", defn.name)
 
+    # ── Skill-tool registration ────────────────────────────────────────
+
+    def register_skill_tools(self) -> None:
+        """Register the ``claw_list_skills`` and ``claw_read_skill`` native tools.
+
+        These tools let the LLM (and sub-agents) discover and read bundled
+        skills during a chat session.  Safe to call multiple times —
+        ``register_native`` replaces in-place.
+        """
+        from agent.skills import (
+            SKILL_LIST_TOOL_DESCRIPTION,
+            SKILL_LIST_TOOL_NAME,
+            SKILL_LIST_TOOL_SCHEMA,
+            SKILL_READ_TOOL_DESCRIPTION,
+            SKILL_READ_TOOL_NAME,
+            SKILL_READ_TOOL_SCHEMA,
+            ListSkillsHandler,
+            ReadSkillHandler,
+        )
+
+        self._registry.register_native(
+            SKILL_LIST_TOOL_NAME,
+            SKILL_LIST_TOOL_DESCRIPTION,
+            SKILL_LIST_TOOL_SCHEMA,
+            ListSkillsHandler(),
+        )
+        logger.debug("claw_list_skills native tool registered")
+
+        self._registry.register_native(
+            SKILL_READ_TOOL_NAME,
+            SKILL_READ_TOOL_DESCRIPTION,
+            SKILL_READ_TOOL_SCHEMA,
+            ReadSkillHandler(),
+        )
+        logger.debug("claw_read_skill native tool registered")
+
     # ── Session loading ───────────────────────────────────────────────
 
     def load_session(self, session_id: str) -> None:

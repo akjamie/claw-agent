@@ -186,6 +186,56 @@ def test_list_skills_io_error_skips_unreadable():
             sk._SKILLS_DIR = original
 
 
+from agent.skills import (
+    SKILL_LIST_TOOL_NAME,
+    SKILL_LIST_TOOL_DESCRIPTION,
+    SKILL_LIST_TOOL_SCHEMA,
+    SKILL_READ_TOOL_NAME,
+    SKILL_READ_TOOL_DESCRIPTION,
+    SKILL_READ_TOOL_SCHEMA,
+    ListSkillsHandler,
+    ReadSkillHandler,
+)
+
+
+def test_register_skill_tools_adds_two_tools():
+    """register_skill_tools registers claw_list_skills and claw_read_skill."""
+    from unittest.mock import MagicMock
+    from agent.loop import AgentLoop
+    from agent.config import AgentConfig
+
+    cfg = AgentConfig()
+    loop = AgentLoop(
+        cfg=cfg,
+        llm=MagicMock(),
+        mcp=MagicMock(),
+        registry=MagicMock(),
+        dispatcher=MagicMock(),
+        compressor=MagicMock(),
+        guardrails=MagicMock(),
+        persistence=MagicMock(),
+        session=MagicMock(),
+        token_estimator=lambda s: len(s) // 4,
+        title_generator=None,
+    )
+
+    loop.register_skill_tools()
+
+    assert loop._registry.register_native.call_count == 2
+
+    call1 = loop._registry.register_native.call_args_list[0]
+    assert call1[0][0] == SKILL_LIST_TOOL_NAME
+    assert call1[0][1] == SKILL_LIST_TOOL_DESCRIPTION
+    assert call1[0][2] == SKILL_LIST_TOOL_SCHEMA
+    assert isinstance(call1[0][3], ListSkillsHandler)
+
+    call2 = loop._registry.register_native.call_args_list[1]
+    assert call2[0][0] == SKILL_READ_TOOL_NAME
+    assert call2[0][1] == SKILL_READ_TOOL_DESCRIPTION
+    assert call2[0][2] == SKILL_READ_TOOL_SCHEMA
+    assert isinstance(call2[0][3], ReadSkillHandler)
+
+
 def test_list_skills_malformed_frontmatter():
     """list_skills handles malformed YAML frontmatter gracefully."""
     with tempfile.TemporaryDirectory() as tmp:
