@@ -47,6 +47,9 @@ acp = ["agent-client-protocol==0.9.0"]
 # `claw dashboard` (localhost SPA + API).  Not in core to keep the default install lean.
 web = ["fastapi==0.133.1", "uvicorn[standard]==0.41.0"]
 
+# Langfuse tracing (optional — enabled when env vars LANGFUSE_PUBLIC_KEY etc. are set).
+tracing = ["langfuse>=3.6.0"]
+
 [project.scripts]
 claw = "cli.main:main"
 

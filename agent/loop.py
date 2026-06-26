@@ -175,6 +175,42 @@ class AgentLoop:
             )
             logger.debug("sub-agent '%s' registered as native tool", defn.name)
 
+    # ── Skill-tool registration ────────────────────────────────────────
+
+    def register_skill_tools(self) -> None:
+        """Register the ``claw_list_skills`` and ``claw_read_skill`` native tools.
+
+        These tools let the LLM (and sub-agents) discover and read bundled
+        skills during a chat session.  Safe to call multiple times —
+        ``register_native`` replaces in-place.
+        """
+        from agent.skills import (
+            SKILL_LIST_TOOL_DESCRIPTION,
+            SKILL_LIST_TOOL_NAME,
+            SKILL_LIST_TOOL_SCHEMA,
+            SKILL_READ_TOOL_DESCRIPTION,
+            SKILL_READ_TOOL_NAME,
+            SKILL_READ_TOOL_SCHEMA,
+            ListSkillsHandler,
+            ReadSkillHandler,
+        )
+
+        self._registry.register_native(
+            SKILL_LIST_TOOL_NAME,
+            SKILL_LIST_TOOL_DESCRIPTION,
+            SKILL_LIST_TOOL_SCHEMA,
+            ListSkillsHandler(),
+        )
+        logger.debug("claw_list_skills native tool registered")
+
+        self._registry.register_native(
+            SKILL_READ_TOOL_NAME,
+            SKILL_READ_TOOL_DESCRIPTION,
+            SKILL_READ_TOOL_SCHEMA,
+            ReadSkillHandler(),
+        )
+        logger.debug("claw_read_skill native tool registered")
+
     # ── Session loading ───────────────────────────────────────────────
 
     def load_session(self, session_id: str) -> None:
@@ -241,6 +277,26 @@ class AgentLoop:
 
     # ── Per-turn driver ───────────────────────────────────────────────
 
+    def _init_turn_tracer(self, user_text: str):
+        """Create a :class:`agent.tracing.TurnTracer` for this turn, or
+        return ``None`` when the ``langfuse`` package is not installed.
+
+        The tracer records each LLM call as a ``generation`` observation
+        under a single trace per turn.  It is a no-op when Langfuse
+        environment variables are missing.
+        """
+        try:
+            from agent.tracing import TurnTracer
+
+            return TurnTracer(
+                session_id=self.session.id,
+                model=self._llm.model,
+                provider=getattr(self, "_provider", ""),
+                user_text=user_text,
+            )
+        except ImportError:
+            return None
+
     def run_turn(self, user_text: str) -> None:
         """Run one user turn through the Agent_Loop.
 
@@ -263,6 +319,12 @@ class AgentLoop:
         user_msg = Message(role="user", content=user_text)
         self.history.append(user_msg)
         self._persist_messages([user_msg])
+
+        # 1a. Initialize Langfuse trace for this turn (no-op when the
+        #     langfuse package is not installed or env vars are missing).
+        _tracer = self._init_turn_tracer(user_text)
+        if _tracer is not None:
+            _tracer.enter()
 
         while True:
             iteration_count += 1
@@ -317,6 +379,19 @@ class AgentLoop:
                 self._persist_messages([err_msg])
                 break
 
+            # 3a. Record the LLM call in Langfuse (no-op when tracing is off).
+            if _tracer is not None:
+                _tracer.record_generation(
+                    iteration=iteration_count,
+                    model=self._llm.model,
+                    input_messages=[m.to_openai() for m in self.history],
+                    tools=self._registry.openai_tools(),
+                    output=stream_result.content,
+                    prompt_tokens=stream_result.prompt_tokens,
+                    completion_tokens=stream_result.completion_tokens,
+                    finish_reason=stream_result.finish_reason,
+                )
+
             # 4. Append the assistant Message; canonical-encode tool calls.
             assistant_msg = Message(
                 role="assistant",
@@ -369,6 +444,12 @@ class AgentLoop:
 
         # 8. Title generation runs at most once per turn (Req 4.1).
         self._maybe_generate_title()
+
+        # 9. End the Langfuse trace and flush events to Langfuse
+        #     (important for one-shot mode where the process exits
+        #     immediately after the turn).
+        if _tracer is not None:
+            _tracer.exit()
 
     # ── Internal helpers ──────────────────────────────────────────────
 

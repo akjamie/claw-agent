@@ -32,6 +32,7 @@ from agent.tool_dispatch import ToolDispatcher
 from agent.compressor import ContextCompressor, CompressionResult
 from agent.title_generator import TitleGenerator
 from agent.loop import AgentLoop
+from agent.tracing import TurnTracer
 from agent.subagent import (
     SubAgentRunner,
     SpecializedSubAgent,

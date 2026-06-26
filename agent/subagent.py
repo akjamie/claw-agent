@@ -46,9 +46,12 @@ import uuid
 from dataclasses import replace
 from typing import TYPE_CHECKING, Callable, List, Optional
 
+from agent.compressor import ContextCompressor
+from agent.guardrails import GuardrailsController
 from agent.llm_client import LLMClient, ProviderHTTPError
 from agent.messages import Message
 from agent.persistence import PersistenceFailure
+from agent.tool_dispatch import ToolDispatcher
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from agent.config import AgentConfig, SubAgentDef
@@ -219,10 +222,8 @@ class SubAgentRunner:
                 model=model,
             )
 
-        from agent.guardrails import GuardrailsController
         child_guardrails = GuardrailsController(mode=cfg.guardrails_mode)
 
-        from agent.tool_dispatch import ToolDispatcher
         child_dispatcher = ToolDispatcher(
             registry=parent._registry,  # noqa: SLF001
             mcp=parent._mcp,            # noqa: SLF001
@@ -231,7 +232,6 @@ class SubAgentRunner:
             timeout_s=cfg.tool_call_timeout_seconds,
         )
 
-        from agent.compressor import ContextCompressor
         child_compressor = ContextCompressor(
             llm=child_llm,
             agent_cfg=child_cfg,
